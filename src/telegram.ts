@@ -240,7 +240,13 @@ export function createBot(token: string, allowedUsers: number[]): Bot {
   bot.on("message:text", async (ctx) => {
     const chatId = ctx.chat.id;
     try {
-      const sessionId = await getOrCreateSession(chatId);
+      const { sessionId, fallback } = await getOrCreateSession(chatId);
+      if (fallback) {
+        await ctx.reply(
+          escapeMarkdownV2("Previous session no longer available. Started a new session."),
+          { parse_mode: "MarkdownV2" },
+        );
+      }
 
       // Send placeholder (not as a reply, to avoid quoting the user's message)
       const placeholder = await ctx.api.sendMessage(

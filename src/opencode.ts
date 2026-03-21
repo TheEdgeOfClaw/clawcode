@@ -1,11 +1,30 @@
 import { createOpencodeClient, type Part } from "@opencode-ai/sdk/client";
 import { formatParts, splitMessage } from "./format.js";
+import { readFileSync, writeFileSync } from "fs";
+import { resolve } from "path";
 
 const OPENCODE_URL = process.env.OPENCODE_URL || "http://127.0.0.1:4096";
+const SESSIONS_FILE = resolve(process.env.SESSIONS_FILE || "./sessions.json");
 
 const client = createOpencodeClient({ baseUrl: OPENCODE_URL });
 
-const chatSessions = new Map<number, string>();
+function loadSessions(): Map<number, string> {
+  try {
+    const raw = readFileSync(SESSIONS_FILE, "utf8");
+    const obj = JSON.parse(raw) as Record<string, string>;
+    return new Map(Object.entries(obj).map(([k, v]) => [Number(k), v]));
+  } catch {
+    return new Map();
+  }
+}
+
+function saveSessions(map: Map<number, string>): void {
+  const obj: Record<string, string> = {};
+  for (const [k, v] of map) obj[String(k)] = v;
+  writeFileSync(SESSIONS_FILE, JSON.stringify(obj, null, 2));
+}
+
+const chatSessions = loadSessions();
 const autoApprove = new Set<string>();
 
 export function setAutoApprove(sessionId: string, enabled: boolean): void {
@@ -42,16 +61,26 @@ export async function healthCheck(
   );
 }
 
-export async function getOrCreateSession(chatId: number): Promise<string> {
+export async function getOrCreateSession(
+  chatId: number,
+): Promise<{ sessionId: string; fallback: boolean }> {
   const existing = chatSessions.get(chatId);
-  if (existing) return existing;
+  if (existing) {
+    // Validate session still exists on the server
+    const list = await client.session.list();
+    if (!list.error && list.data?.some((s) => s.id === existing)) {
+      return { sessionId: existing, fallback: false };
+    }
+    // Session gone — fall through to create a new one
+  }
 
   const result = await client.session.create();
   if (result.error) throw new Error(`failed to create session: ${result.error}`);
 
   const sessionId = result.data.id;
   chatSessions.set(chatId, sessionId);
-  return sessionId;
+  saveSessions(chatSessions);
+  return { sessionId, fallback: existing !== undefined };
 }
 
 export async function sendPrompt(
@@ -74,6 +103,7 @@ export async function createNewSession(chatId: number): Promise<string> {
 
   const sessionId = result.data.id;
   chatSessions.set(chatId, sessionId);
+  saveSessions(chatSessions);
   return sessionId;
 }
 
@@ -97,6 +127,7 @@ export function getSessionId(chatId: number): string | undefined {
 
 export function switchSession(chatId: number, sessionId: string): void {
   chatSessions.set(chatId, sessionId);
+  saveSessions(chatSessions);
 }
 
 export async function getSessionMessages(
