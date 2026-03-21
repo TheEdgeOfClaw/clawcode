@@ -242,12 +242,26 @@ export function createBot(token: string, allowedUsers: number[]): Bot {
     try {
       const sessionId = await getOrCreateSession(chatId);
 
-      // Send placeholder
-      const placeholder = await ctx.reply(
+      // Send placeholder (not as a reply, to avoid quoting the user's message)
+      const placeholder = await ctx.api.sendMessage(
+        chatId,
         escapeMarkdownV2("thinking..."),
         { parse_mode: "MarkdownV2" },
       );
       const placeholderMsgId = placeholder.message_id;
+
+      // Send typing status, refreshed every 4s until done
+      let typingInterval: ReturnType<typeof setInterval> | null = setInterval(() => {
+        void ctx.api.sendChatAction(chatId, "typing");
+      }, 4000);
+      void ctx.api.sendChatAction(chatId, "typing");
+
+      const stopTyping = () => {
+        if (typingInterval) {
+          clearInterval(typingInterval);
+          typingInterval = null;
+        }
+      };
 
       let lastEditTime = 0;
       let editTimer: ReturnType<typeof setTimeout> | null = null;
@@ -282,6 +296,7 @@ export function createBot(token: string, allowedUsers: number[]): Bot {
         // onError
         async (error: string) => {
           if (editTimer) clearTimeout(editTimer);
+          stopTyping();
           await editMessage(
             ctx,
             placeholderMsgId,
@@ -291,6 +306,7 @@ export function createBot(token: string, allowedUsers: number[]): Bot {
         // onDone
         async (parts: Part[]) => {
           if (editTimer) clearTimeout(editTimer);
+          stopTyping();
           // Final message: format and split
           const formatted = formatParts(parts);
           const chunks = splitMessage(formatted || escapeMarkdownV2("(empty response)"));
@@ -331,6 +347,7 @@ export function createBot(token: string, allowedUsers: number[]): Bot {
         if (isSessionRegistered(sessionId)) {
           unregisterSession(sessionId);
           if (editTimer) clearTimeout(editTimer);
+          stopTyping();
           await editMessage(
             ctx,
             placeholderMsgId,
