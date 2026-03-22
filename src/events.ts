@@ -16,6 +16,7 @@ interface SessionHandler {
   onPermission?: PermissionHandler;
   parts: Map<string, Part>;
   assistantMessageIDs: Set<string>;
+  pendingPermissions: Set<string>;
 }
 
 const handlers = new Map<string, SessionHandler>();
@@ -27,7 +28,7 @@ export function registerSession(
   onDone: DoneHandler,
   onPermission?: PermissionHandler,
 ): void {
-  handlers.set(sessionId, { onPart, onError, onDone, onPermission, parts: new Map(), assistantMessageIDs: new Set() });
+  handlers.set(sessionId, { onPart, onError, onDone, onPermission, parts: new Map(), assistantMessageIDs: new Set(), pendingPermissions: new Set() });
 }
 
 export function unregisterSession(sessionId: string): void {
@@ -77,6 +78,10 @@ function handleEvent(event: Event): void {
       const sessionId = event.properties.sessionID;
       const handler = handlers.get(sessionId);
       if (!handler) return;
+      if (handler.pendingPermissions.size > 0) {
+        console.log(`[events] session.idle session=${sessionId} (skipped, ${handler.pendingPermissions.size} pending permissions)`);
+        return;
+      }
       console.log(`[events] session.idle session=${sessionId} parts=${handler.parts.size}`);
       handler.onDone(Array.from(handler.parts.values()));
       handlers.delete(sessionId);
@@ -84,9 +89,24 @@ function handleEvent(event: Event): void {
     }
     case "permission.updated": {
       const permission = event.properties;
+      console.log(`[events] permission.updated session=${permission.sessionID} perm=${permission.id} type=${permission.type}`);
       const handler = handlers.get(permission.sessionID);
-      if (!handler?.onPermission) return;
-      handler.onPermission(permission);
+      if (!handler) {
+        console.log(`[events] no handler registered for session=${permission.sessionID}`);
+        return;
+      }
+      handler.pendingPermissions.add(permission.id);
+      if (handler.onPermission) {
+        handler.onPermission(permission);
+      }
+      break;
+    }
+    case "permission.replied": {
+      const { sessionID, permissionID } = event.properties;
+      const handler = handlers.get(sessionID);
+      if (!handler) return;
+      handler.pendingPermissions.delete(permissionID);
+      console.log(`[events] permission.replied session=${sessionID} perm=${permissionID} remaining=${handler.pendingPermissions.size}`);
       break;
     }
   }
