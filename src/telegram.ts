@@ -300,14 +300,6 @@ export function createBot(token: string, allowedUsers: number[]): Bot {
         );
       }
 
-      // Send placeholder (not as a reply, to avoid quoting the user's message)
-      const placeholder = await ctx.api.sendMessage(
-        chatId,
-        escapeMarkdownV2("thinking..."),
-        { parse_mode: "MarkdownV2" },
-      );
-      const placeholderMsgId = placeholder.message_id;
-
       // Send typing status, refreshed every 4s until done
       let typingInterval: ReturnType<typeof setInterval> | null = setInterval(() => {
         void ctx.api.sendChatAction(chatId, "typing");
@@ -321,13 +313,14 @@ export function createBot(token: string, allowedUsers: number[]): Bot {
         }
       };
 
+      let responseMsgId: number | null = null;
       let lastEditTime = 0;
       let editTimer: ReturnType<typeof setTimeout> | null = null;
       let latestPreview = "";
 
       const flushEdit = () => {
-        if (latestPreview) {
-          void editMessage(ctx, placeholderMsgId, latestPreview);
+        if (latestPreview && responseMsgId !== null) {
+          void editMessage(ctx, responseMsgId, latestPreview);
           lastEditTime = Date.now();
         }
       };
@@ -338,12 +331,21 @@ export function createBot(token: string, allowedUsers: number[]): Bot {
 
       registerSession(
         sessionId,
-        // onPart — throttled edit-in-place
+        // onPart — send first message on first data, then throttled edit-in-place
         (parts: Part[]) => {
           latestPreview = formatPartsPreview(parts);
+          if (responseMsgId === null) {
+            // Send first message and capture ID for future edits
+            void ctx.api.sendMessage(chatId, latestPreview, { parse_mode: "MarkdownV2" })
+              .then((msg) => {
+                responseMsgId = msg.message_id;
+                lastEditTime = Date.now();
+              })
+              .catch((err) => console.error(`[prompt] failed to send first message:`, err));
+            return;
+          }
           const now = Date.now();
           const elapsed = now - lastEditTime;
-
           if (elapsed >= THROTTLE_MS) {
             if (editTimer) clearTimeout(editTimer);
             editTimer = null;
@@ -357,11 +359,12 @@ export function createBot(token: string, allowedUsers: number[]): Bot {
           if (editTimer) clearTimeout(editTimer);
           stopTyping();
           console.error(`[prompt] error session=${sessionId}: ${error}`);
-          await editMessage(
-            ctx,
-            placeholderMsgId,
-            escapeMarkdownV2(`Error: ${error}`),
-          );
+          const errText = escapeMarkdownV2(`Error: ${error}`);
+          if (responseMsgId !== null) {
+            await editMessage(ctx, responseMsgId, errText);
+          } else {
+            await ctx.api.sendMessage(chatId, errText, { parse_mode: "MarkdownV2" });
+          }
         },
         // onDone
         async (parts: Part[]) => {
@@ -372,8 +375,14 @@ export function createBot(token: string, allowedUsers: number[]): Bot {
           const formatted = formatParts(parts);
           const chunks = splitMessage(formatted || escapeMarkdownV2("(empty response)"));
 
-          // Replace placeholder with first chunk
-          await editMessage(ctx, placeholderMsgId, chunks[0]!);
+          if (responseMsgId !== null) {
+            // Replace streaming message with first chunk
+            await editMessage(ctx, responseMsgId, chunks[0]!);
+          } else {
+            // No streaming message was sent yet (e.g. very fast response)
+            const msg = await ctx.api.sendMessage(chatId, chunks[0]!, { parse_mode: "MarkdownV2" });
+            responseMsgId = msg.message_id;
+          }
 
           // Send remaining chunks as new messages
           for (let i = 1; i < chunks.length; i++) {
@@ -412,11 +421,12 @@ export function createBot(token: string, allowedUsers: number[]): Bot {
           if (editTimer) clearTimeout(editTimer);
           stopTyping();
           console.error(`[prompt] fallback error session=${sessionId}:`, err);
-          await editMessage(
-            ctx,
-            placeholderMsgId,
-            escapeMarkdownV2(`Error: ${String(err)}`),
-          );
+          const errText = escapeMarkdownV2(`Error: ${String(err)}`);
+          if (responseMsgId !== null) {
+            await editMessage(ctx, responseMsgId, errText);
+          } else {
+            await ctx.api.sendMessage(chatId, errText, { parse_mode: "MarkdownV2" });
+          }
         }
       }
     } catch (err) {
