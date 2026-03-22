@@ -20,22 +20,31 @@ src/
   telegram.ts    -- grammY bot: auth middleware, commands, prompt dispatch, streaming edits
   opencode.ts    -- SDK client wrapper: session CRUD, prompt, abort, permissions, auto-approve
   format.ts      -- MarkdownV2 escaping, code block preservation, tool summaries, message chunking
-  events.ts      -- SSE subscription: message.part.updated, session.error/idle, permission.updated
-  types.ts       -- shared types (currently unused)
+  events.ts      -- SSE subscription: message.part.updated, permission.asked, streaming dispatch
+  types.ts       -- shared types (unused, stale)
 ```
 
 ## Key Details
 
 - Two separate `createOpencodeClient` instances (opencode.ts for requests, events.ts for SSE stream)
-- Session-to-chat mapping is in-memory `Map<number, string>`; lost on restart
+- Session-to-chat mapping persisted to `sessions.json` (loaded on startup, saved on change)
 - Streaming uses edit-in-place with 2s throttle to stay under Telegram rate limits
-- Permission requests surface as inline keyboards; auto-approve is per-session toggle
+- Prompt is fired non-blocking (`.then/.catch`) so grammY can process permission callbacks while waiting
+- Permission requests surface as inline keyboards (Allow/Session/Deny); auto-approve is per-session toggle
+- Permission callback data uses short counter keys (Telegram 64-byte limit on callback data)
 - Message chunking respects code block boundaries at 4096 char Telegram limit
+- SSE event types diverge from SDK types: server sends `permission.asked` (not `permission.updated`),
+  with different property shapes. Custom `PermissionEvent` interface in events.ts handles this.
+- No SSE reconnection logic; relies on systemd `Restart=on-failure` for recovery
 - Runtime: bun (no build step)
 
 ## Config
 
-`.env` file with `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USERS`, optional `OPENCODE_URL`.
+`.env` file:
+- `TELEGRAM_BOT_TOKEN` -- required
+- `TELEGRAM_ALLOWED_USERS` -- required, comma-separated Telegram user IDs
+- `OPENCODE_URL` -- optional, default `http://127.0.0.1:4096`
+- `OPENCODE_WORKSPACE` -- optional, server working directory (used by Makefile at install time)
 
 ## Dev Flow
 
@@ -45,7 +54,7 @@ src/
 
 ## Deployment
 
-`make install` -- copy service files to `~/.config/systemd/user/`, reload daemon.
+`make install` -- sed-substitutes `{{WORKDIR}}` in service files and copies to `~/.config/systemd/user/`, reload daemon. Server WorkingDirectory comes from `OPENCODE_WORKSPACE` in `.env` (falls back to cwd).
 `make uninstall` -- disable, remove, reload.
 
 ## Key Decisions
@@ -56,6 +65,7 @@ src/
 | Telegram lib | grammY | Lightweight, TypeScript-native |
 | Runtime | bun | No build step, runs TS directly |
 | Bot mode | Long polling | Simpler than webhooks for single-user |
-| Session mapping | In-memory Map | Sufficient for single-user; lost on restart = minor |
+| Session mapping | File-persisted Map | Survives restarts; auto-approve is in-memory only |
 | Deployment | systemd user services | Reliable, auto-restart, journald logging |
 | Streaming | Edit-in-place messages | ChatGPT-style UX with 2s throttle |
+| Prompt execution | Non-blocking `.then/.catch` | Avoids deadlock: grammY must process permission callbacks while prompt blocks |
