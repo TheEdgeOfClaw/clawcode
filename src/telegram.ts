@@ -76,27 +76,35 @@ export function createBot(token: string, allowedUsers: number[]): Bot {
   });
 
   bot.command("start_llama", async (ctx) => {
+    console.log(`[cmd] /start_llama chat=${ctx.chat.id}`);
     try {
       const proc = spawnSync("systemctl", ["--user", "start", "llama"]);
       if (proc.status === 0) {
         await ctx.reply("llama started\\.", { parse_mode: "MarkdownV2" });
       } else {
-        await ctx.reply(`Failed to start llama: ${proc.stderr?.toString().trim()}`);
+        const stderr = proc.stderr?.toString().trim();
+        console.error(`[cmd] /start_llama failed: ${stderr}`);
+        await ctx.reply(`Failed to start llama: ${stderr}`);
       }
     } catch (err) {
+      console.error(`[cmd] /start_llama error:`, err);
       await ctx.reply(`Error: ${String(err)}`);
     }
   });
 
   bot.command("stop_llama", async (ctx) => {
+    console.log(`[cmd] /stop_llama chat=${ctx.chat.id}`);
     try {
       const proc = spawnSync("systemctl", ["--user", "stop", "llama"]);
       if (proc.status === 0) {
         await ctx.reply("llama stopped\\.", { parse_mode: "MarkdownV2" });
       } else {
-        await ctx.reply(`Failed to stop llama: ${proc.stderr?.toString().trim()}`);
+        const stderr = proc.stderr?.toString().trim();
+        console.error(`[cmd] /stop_llama failed: ${stderr}`);
+        await ctx.reply(`Failed to stop llama: ${stderr}`);
       }
     } catch (err) {
+      console.error(`[cmd] /stop_llama error:`, err);
       await ctx.reply(`Error: ${String(err)}`);
     }
   });
@@ -112,17 +120,21 @@ export function createBot(token: string, allowedUsers: number[]): Bot {
 
   bot.command("new", async (ctx) => {
     const chatId = ctx.chat.id;
+    console.log(`[cmd] /new chat=${chatId}`);
     try {
       const sessionId = await createNewSession(chatId);
+      console.log(`[session] created session=${sessionId} chat=${chatId}`);
       await ctx.reply(`New session created: \`${escapeMarkdownV2(sessionId)}\``, {
         parse_mode: "MarkdownV2",
       });
     } catch (err) {
+      console.error(`[cmd] /new error:`, err);
       await ctx.reply(`Failed to create session: ${String(err)}`);
     }
   });
 
   bot.command("sessions", async (ctx) => {
+    console.log(`[cmd] /sessions chat=${ctx.chat.id}`);
     try {
       const sessions = await listSessions();
       if (sessions.length === 0) {
@@ -150,25 +162,30 @@ export function createBot(token: string, allowedUsers: number[]): Bot {
         reply_markup: keyboard.inline_keyboard.length > 0 ? keyboard : undefined,
       });
     } catch (err) {
+      console.error(`[cmd] /sessions error:`, err);
       await ctx.reply(`Failed to list sessions: ${String(err)}`);
     }
   });
 
   bot.command("abort", async (ctx) => {
     const sessionId = getSessionId(ctx.chat.id);
+    console.log(`[cmd] /abort chat=${ctx.chat.id} session=${sessionId ?? "none"}`);
     if (!sessionId) {
       await ctx.reply("No active session to abort.");
       return;
     }
     try {
       await abortSession(sessionId);
+      console.log(`[session] aborted session=${sessionId}`);
       await ctx.reply("Session aborted\\.", { parse_mode: "MarkdownV2" });
     } catch (err) {
+      console.error(`[cmd] /abort error:`, err);
       await ctx.reply(`Failed to abort: ${String(err)}`);
     }
   });
 
   bot.command("autoapprove", async (ctx) => {
+    console.log(`[cmd] /autoapprove chat=${ctx.chat.id}`);
     const arg = ctx.match?.trim().toLowerCase();
     if (arg !== "on" && arg !== "off") {
       await ctx.reply("Usage: /autoapprove on \\| off", { parse_mode: "MarkdownV2" });
@@ -183,6 +200,7 @@ export function createBot(token: string, allowedUsers: number[]): Bot {
     }
     const enabled = arg === "on";
     setAutoApprove(sessionId, enabled);
+    console.log(`[session] autoapprove=${enabled} session=${sessionId}`);
     await ctx.reply(
       escapeMarkdownV2(`Auto-approve ${enabled ? "enabled" : "disabled"} for current session.`),
       { parse_mode: "MarkdownV2" },
@@ -190,6 +208,7 @@ export function createBot(token: string, allowedUsers: number[]): Bot {
   });
 
   bot.command("history", async (ctx) => {
+    console.log(`[cmd] /history chat=${ctx.chat.id}`);
     const sessionId = getSessionId(ctx.chat.id);
     if (!sessionId) {
       await ctx.reply("No active session\\. Use /new to create one\\.", {
@@ -221,6 +240,7 @@ export function createBot(token: string, allowedUsers: number[]): Bot {
         await ctx.reply(chunk, { parse_mode: "MarkdownV2" });
       }
     } catch (err) {
+      console.error(`[cmd] /history error:`, err);
       await ctx.reply(`Failed to fetch history: ${String(err)}`);
     }
   });
@@ -238,6 +258,7 @@ export function createBot(token: string, allowedUsers: number[]): Bot {
         return;
       }
       switchSession(chatId, sessionId);
+      console.log(`[session] switched to session=${sessionId} chat=${chatId}`);
       await ctx.answerCallbackQuery({ text: "Session switched" });
       await ctx.editMessageReplyMarkup({ reply_markup: undefined });
       return;
@@ -256,9 +277,11 @@ export function createBot(token: string, allowedUsers: number[]): Bot {
     const permResponse = response === "allow" ? "once" : "reject";
     try {
       await replyPermission(sessionId, permissionId, permResponse);
+      console.log(`[permission] ${permResponse} session=${sessionId} perm=${permissionId}`);
       await ctx.answerCallbackQuery({ text: `Permission ${response === "allow" ? "granted" : "denied"}` });
       await ctx.editMessageReplyMarkup({ reply_markup: undefined });
     } catch (err) {
+      console.error(`[permission] reply error session=${sessionId}:`, err);
       await ctx.answerCallbackQuery({ text: `Error: ${String(err)}` });
     }
   });
@@ -266,9 +289,11 @@ export function createBot(token: string, allowedUsers: number[]): Bot {
   // Text message handler — forward to OpenCode with streaming
   bot.on("message:text", async (ctx) => {
     const chatId = ctx.chat.id;
+    console.log(`[prompt] message received chat=${chatId}`);
     try {
       const { sessionId, fallback } = await getOrCreateSession(chatId);
       if (fallback) {
+        console.log(`[session] previous session gone, created new session=${sessionId} chat=${chatId}`);
         await ctx.reply(
           escapeMarkdownV2("Previous session no longer available. Started a new session."),
           { parse_mode: "MarkdownV2" },
@@ -307,6 +332,7 @@ export function createBot(token: string, allowedUsers: number[]): Bot {
         }
       };
 
+      console.log(`[prompt] sending to session=${sessionId}`);
       // Fire prompt (non-blocking — events will stream in)
       const promptDone = sendPrompt(sessionId, ctx.message.text);
 
@@ -330,6 +356,7 @@ export function createBot(token: string, allowedUsers: number[]): Bot {
         async (error: string) => {
           if (editTimer) clearTimeout(editTimer);
           stopTyping();
+          console.error(`[prompt] error session=${sessionId}: ${error}`);
           await editMessage(
             ctx,
             placeholderMsgId,
@@ -340,6 +367,7 @@ export function createBot(token: string, allowedUsers: number[]): Bot {
         async (parts: Part[]) => {
           if (editTimer) clearTimeout(editTimer);
           stopTyping();
+          console.log(`[prompt] done session=${sessionId} parts=${parts.length}`);
           // Final message: format and split
           const formatted = formatParts(parts);
           const chunks = splitMessage(formatted || escapeMarkdownV2("(empty response)"));
@@ -354,7 +382,9 @@ export function createBot(token: string, allowedUsers: number[]): Bot {
         },
         // onPermission
         async (perm: Permission) => {
+          console.log(`[permission] request type=${perm.type} session=${perm.sessionID} perm=${perm.id}`);
           if (isAutoApprove(perm.sessionID)) {
+            console.log(`[permission] auto-approving perm=${perm.id}`);
             await replyPermission(perm.sessionID, perm.id, "once");
             await ctx.reply(
               escapeMarkdownV2(`Auto-approved: ${perm.title}`),
@@ -381,6 +411,7 @@ export function createBot(token: string, allowedUsers: number[]): Bot {
           unregisterSession(sessionId);
           if (editTimer) clearTimeout(editTimer);
           stopTyping();
+          console.error(`[prompt] fallback error session=${sessionId}:`, err);
           await editMessage(
             ctx,
             placeholderMsgId,
@@ -389,6 +420,7 @@ export function createBot(token: string, allowedUsers: number[]): Bot {
         }
       }
     } catch (err) {
+      console.error(`[prompt] unhandled error chat=${chatId}:`, err);
       await ctx.reply(`Error: ${String(err)}`);
     }
   });

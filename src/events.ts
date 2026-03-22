@@ -68,6 +68,7 @@ function handleEvent(event: Event): void {
             ? String(err.data.message)
             : err.name)
         : "Unknown error";
+      console.error(`[events] session.error session=${sessionId}: ${errMsg}`);
       handler.onError(String(errMsg));
       handlers.delete(sessionId);
       break;
@@ -76,6 +77,7 @@ function handleEvent(event: Event): void {
       const sessionId = event.properties.sessionID;
       const handler = handlers.get(sessionId);
       if (!handler) return;
+      console.log(`[events] session.idle session=${sessionId} parts=${handler.parts.size}`);
       handler.onDone(Array.from(handler.parts.values()));
       handlers.delete(sessionId);
       break;
@@ -98,9 +100,10 @@ export async function subscribeEvents(): Promise<void> {
       try {
         handleEvent(event);
       } catch (err) {
-        console.error("event handler error:", err);
+        console.error("[events] handler error:", err);
       }
     }
+    console.error("[events] SSE stream ended unexpectedly");
   })();
-  console.log("SSE event stream connected");
+  console.log("[events] SSE stream connected");
 }
