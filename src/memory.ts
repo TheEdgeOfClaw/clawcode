@@ -1,8 +1,10 @@
+import { spawn, execSync } from "child_process";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { resolve, join } from "path";
 import * as log from "./log.js";
 
 let exchangesDir: string;
+let indexing = false;
 
 export function initExchangesDir(directory: string): void {
   exchangesDir = resolve(process.env.EXCHANGES_DIR || join(directory, "exchanges"));
@@ -10,6 +12,31 @@ export function initExchangesDir(directory: string): void {
     mkdirSync(exchangesDir, { recursive: true });
     log.info(`[memory] created exchanges dir: ${exchangesDir}`);
   }
+}
+
+function qmdIndex(): void {
+  if (indexing) return;
+
+  try {
+    execSync("command -v qmd", { stdio: "ignore" });
+  } catch {
+    return;
+  }
+
+  indexing = true;
+  const child = spawn("sh", ["-c", "qmd update && qmd embed"], {
+    stdio: "ignore",
+    detached: true,
+  });
+  child.unref();
+  child.on("close", (code) => {
+    indexing = false;
+    if (code !== 0) log.error(`[memory] qmd index exited with code ${code}`);
+  });
+  child.on("error", (err) => {
+    indexing = false;
+    log.error("[memory] qmd index failed", err);
+  });
 }
 
 export function saveExchange(userMessage: string, assistantResponse: string): void {
@@ -36,4 +63,5 @@ export function saveExchange(userMessage: string, assistantResponse: string): vo
 
   writeFileSync(filepath, content);
   log.info(`[memory] saved exchange: ${filename}`);
+  qmdIndex();
 }
