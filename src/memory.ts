@@ -1,12 +1,13 @@
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { resolve, join } from "path";
 
-const EXCHANGES_DIR = resolve(process.env.EXCHANGES_DIR || "./exchanges");
+let exchangesDir: string;
 
-export function initExchangesDir(): void {
-  if (!existsSync(EXCHANGES_DIR)) {
-    mkdirSync(EXCHANGES_DIR, { recursive: true });
-    console.log(`[memory] created exchanges dir: ${EXCHANGES_DIR}`);
+export function initExchangesDir(directory: string): void {
+  exchangesDir = resolve(process.env.EXCHANGES_DIR || join(directory, "exchanges"));
+  if (!existsSync(exchangesDir)) {
+    mkdirSync(exchangesDir, { recursive: true });
+    console.log(`[memory] created exchanges dir: ${exchangesDir}`);
   }
 }
 
@@ -15,7 +16,7 @@ export function saveExchange(userMessage: string, assistantResponse: string): vo
   const date = now.toISOString().slice(0, 10);
   const time = now.toISOString().slice(11, 19).replace(/:/g, "");
   const filename = `${date}-${time}.md`;
-  const filepath = join(EXCHANGES_DIR, filename);
+  const filepath = join(exchangesDir, filename);
 
   const content = [
     "---",

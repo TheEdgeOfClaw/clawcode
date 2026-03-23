@@ -19,7 +19,7 @@ export const ClawCode: Plugin = async ({ client, directory }) => {
   }
 
   init(client, directory);
-  initExchangesDir();
+  initExchangesDir(directory);
 
   const bot = createBot(token, allowedUsers);
 
