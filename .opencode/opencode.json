@@ -1,0 +1,21 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "edit": "allow",
+    "webfetch": "ask",
+    "websearch": "allow",
+    "doom_loop": "ask",
+    "external_directory": {
+      "/tmp": "allow",
+      "*": "ask"
+    }
+  },
+  "instructions": [
+    "/home/arch/workspace/AGENTS.md",
+    "/home/arch/workspace/IDENTITY.md",
+    "/home/arch/workspace/MEMORY.md",
+    "/home/arch/workspace/USER.md",
+    "/home/arch/workspace/SOUL.md",
+    "/home/arch/workspace/TOOLS.md"
+  ]
+}

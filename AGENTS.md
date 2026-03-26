@@ -22,9 +22,13 @@ src/
   format.ts      -- MarkdownV2 escaping, code block preservation, tool summaries, message chunking
   events.ts      -- event router: message.part.updated, permission.asked, streaming dispatch
   memory.ts      -- exchange logging: saves every Telegram exchange as markdown to exchanges/
-skills/
-  remember/SKILL.md  -- OpenCode skill: append user-specified memories to MEMORY.md
-  recall/SKILL.md    -- OpenCode skill: search past exchanges via qmd
+.opencode/
+  skills/
+    remember/SKILL.md  -- OpenCode skill: append user-specified memories to MEMORY.md
+    recall/SKILL.md    -- OpenCode skill: search past exchanges via qmd
+  agents/              -- custom agent definitions
+  tools/               -- custom tool definitions
+  commands/            -- custom slash commands
 ```
 
 ## Key Details
@@ -45,7 +49,7 @@ skills/
 - Every exchange is saved as `exchanges/YYYY-MM-DD-HHMMSS.md` (qmd-compatible markdown with YAML frontmatter)
 - `/remember` sends a prompt to OpenCode that triggers the `remember` skill to append to `MEMORY.md`
 - `recall` skill lets the model search past exchanges via qmd on demand
-- Skills live in `skills/` in this repo, installed to `OPENCODE_WORKSPACE/.opencode/skills/` via `make install`
+- Skills, agents, tools, and commands live in `.opencode/` in this repo, copied to `OPENCODE_WORKSPACE/.opencode/` via `make install`
 - Bot shares a process with the OpenCode server — unhandled exceptions can crash the server. Keep error handling tight.
 
 ## Config
@@ -67,7 +71,7 @@ Environment variables (set in server's environment or systemd `EnvironmentFile=`
 
 Install the plugin into the OpenCode workspace's plugin directory (symlink or copy `src/main.ts`), or publish to npm and add to `opencode.json`.
 
-`make install` -- installs `opencode-server.service` to `~/.config/systemd/user/`, installs skills to `OPENCODE_WORKSPACE/.opencode/skills/`.
+`make install` -- installs `opencode-server.service` to `~/.config/systemd/user/`, copies `.opencode/` to `OPENCODE_WORKSPACE/.opencode/`.
 `make uninstall` -- disable, remove, reload.
 
 ## Key Decisions
