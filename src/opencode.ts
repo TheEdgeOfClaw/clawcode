@@ -12,7 +12,7 @@ const chatAgents = new Map<number, string>();
 
 export function init(c: Client, directory: string): void {
   client = c;
-  sessionsFile = resolve(directory, "sessions.json");
+  sessionsFile = resolve(directory, ".opencode", "sessions.json");
   loadSessions();
 }
 
